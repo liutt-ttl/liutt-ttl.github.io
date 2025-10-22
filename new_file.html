@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>逻辑命题真值表生成器</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+  />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            secondary: '#16a34a',
+            neutral: '#64748b',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .btn-hover {
+        @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
+      }
+      .input-focus {
+        @apply focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none;
+      }
+      .symbol-btn {
+        @apply w-10 h-10 flex items-center justify-center rounded-md text-white font-medium transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans min-h-screen">
+  <div class="container mx-auto px-4 py-8 max-w-6xl">
+    <header class="text-center mb-10">
+      <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-gray-800 mb-2">
+        逻辑命题真值表生成器
+      </h1>
+      <p class="text-neutral">支持自定义变元和层次运算展示</p>
+    </header>
+
+    <section class="bg-white rounded-xl shadow-md p-6 mb-8">
+      <h2 class="text-xl font-semibold text-gray-700 mb-4">命题输入</h2>
+      <div class="flex flex-col md:flex-row gap-4">
+        <div class="flex-1">
+          <label for="formula" class="block text-sm font-medium text-gray-700 mb-1">
+            命题公式
+          </label>
+          <div class="flex items-center">
+            <input
+              type="text"
+              id="formula"
+              class="flex-1 px-3 py-2 border border-gray-300 rounded-md input-focus"
+              placeholder="例如: ((A ∧ B) → C) ∨ D"
+              value="((A∧B)→C)∨D"
+            />
+          </div>
+        </div>
+      </div>
+      
+      <!-- 逻辑联结词按钮组 -->
+      <div class="mt-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+          逻辑联结词:
+        </label>
+        <div class="flex flex-wrap gap-2">
+          <button class="symbol-btn bg-primary" data-symbol="∧" title="合取 (与)">∧</button>
+          <button class="symbol-btn bg-primary" data-symbol="∨" title="析取 (或)">∨</button>
+          <button class="symbol-btn bg-primary" data-symbol="¬" title="否定 (非)">¬</button>
+          <button class="symbol-btn bg-primary" data-symbol="→" title="蕴含">→</button>
+          <button class="symbol-btn bg-primary" data-symbol="↔" title="等价">↔</button>
+          <button class="symbol-btn bg-amber-600" data-symbol="(" title="左括号">(</button>
+          <button class="symbol-btn bg-amber-600" data-symbol=")" title="右括号">)</button>
+        </div>
+      </div>
+      
+      <!-- 命题变元输入框 -->
+      <div class="mt-6">
+        <label for="variables" class="block text-sm font-medium text-gray-700 mb-1">
+          命题变元 (用逗号分隔，至少2个)
+        </label>
+        <input
+          type="text"
+          id="variables"
+          class="w-full px-3 py-2 border border-gray-300 rounded-md input-focus"
+          placeholder="例如: p,q,r 或 A,B,C,D"
+          value="A,B,C,D"
+        />
+      </div>
+      
+      <!-- 生成真值表按钮 -->
+      <div class="mt-6 text-right">
+        <button
+          id="generate"
+          class="px-6 py-2 bg-secondary text-white rounded-md font-medium btn-hover"
+        >
+          <i class="fas fa-table mr-2"></i>生成真值表
+        </button>
+      </div>
+    </section>
+
+    <section id="result" class="hidden">
+      <h2 class="text-xl font-semibold text-gray-700 mb-4">真值表结果</h2>
+      
+      <div id="formulaBreakdown" class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <h3 class="text-lg font-medium text-gray-800 mb-2">公式拆分过程</h3>
+        <div id="breakdownSteps" class="space-y-2 text-gray-700"></div>
+      </div>
+      
+      <div class="overflow-x-auto bg-white rounded-xl shadow-md mb-6">
+        <table id="truthTable" class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50"></thead>
+          <tbody class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+      
+      <div id="formulaType" class="mt-4 p-4 rounded-lg"></div>
+    </section>
+  </div>
+
+  <script>
+    // DOM 元素获取
+    const formulaInput = document.getElementById('formula');
+    const variablesInput = document.getElementById('variables');
+    const generateBtn = document.getElementById('generate');
+    const resultSection = document.getElementById('result');
+    const truthTable = document.getElementById('truthTable');
+    const formulaTypeEl = document.getElementById('formulaType');
+    const symbolButtons = document.querySelectorAll('[data-symbol]');
+    const breakdownStepsEl = document.getElementById('breakdownSteps');
+
+    // 逻辑联结词按钮：点击后将符号插入公式输入框
+    symbolButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const symbol = btn.getAttribute('data-symbol');
+        // 在光标位置插入符号
+        const cursorPos = formulaInput.selectionStart;
+        const textBefore = formulaInput.value.substring(0, cursorPos);
+        const textAfter = formulaInput.value.substring(cursorPos);
+        formulaInput.value = textBefore + symbol + textAfter;
+        
+        // 移动光标到插入符号后面
+        formulaInput.focus();
+        formulaInput.selectionStart = cursorPos + 1;
+        formulaInput.selectionEnd = cursorPos + 1;
+      });
+    });
+
+    // 生成真值表按钮点击事件
+    generateBtn.addEventListener('click', generateTruthTable);
+
+    // 生成真值表的核心函数
+    function generateTruthTable() {
+      const formula = formulaInput.value.trim();
+      const variablesText = variablesInput.value.trim();
+
+      // 校验输入
+      if (!variablesText) {
+        alert('请输入命题变元');
+        return;
+      }
+      const variables = variablesText.split(',').map((v) => v.trim()).filter(v => v);
+      if (variables.length < 2) {
+        alert('请至少输入2个命题变元');
+        return;
+      }
+      if (!formula) {
+        alert('请输入命题公式');
+        return;
+      }
+      
+      // 验证变量是否只包含字母
+      if (!variables.every(v => /^[a-zA-Z]$/.test(v))) {
+        alert('命题变元只能包含单个字母(a-z, A-Z)');
+        return;
+      }
+
+      // 递归分析公式结构，生成多层次拆分步骤
+      const breakdownSteps = [];
+      recursiveAnalyzeFormula(formula, variables, 0, breakdownSteps);
+      renderBreakdownSteps(breakdownSteps);
+
+      // 提取所有子公式（排除原始公式本身）
+      const subFormulas = [];
+      extractSubFormulasRecursive(formula, variables, subFormulas);
+      
+      // 过滤掉与原始公式相同的子公式（避免重复）
+      const filteredSubFormulas = subFormulas.filter(sub => {
+        // 比较时去除外层括号，避免因括号导致的误判
+        const cleanSub = removeOuterBrackets(sub.formula);
+        const cleanFormula = removeOuterBrackets(formula);
+        return cleanSub !== cleanFormula;
+      });
+      
+      // 生成所有变量的真值组合
+      const truthCombinations = generateTruthCombinations(variables);
+      
+      // 计算每一行的逻辑值（包括所有子公式和最终结果）
+      const tableData = truthCombinations.map((combination) => {
+        const values = {};
+        variables.forEach((varName, index) => {
+          values[varName] = combination[index];
+        });
+        
+        // 计算所有子公式（按优先级顺序）
+        const subResults = {};
+        filteredSubFormulas.forEach(sub => {
+          subResults[sub.formula] = evaluateSubFormula(sub.formula, values);
+        });
+        
+        // 计算最终结果
+        const finalResult = evaluateSubFormula(formula, values);
+        
+        return { ...values, ...subResults, finalResult };
+      });
+
+      // 渲染真值表（子公式从左到右，最终结果列在最后且唯一）
+      renderTruthTable(variables, filteredSubFormulas, formula, tableData);
+      
+      // 判断公式类型
+      determineFormulaType(tableData.map((row) => row.finalResult));
+      
+      // 显示结果区域
+      resultSection.classList.remove('hidden');
+      
+      // 滚动到结果区域
+      resultSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 移除公式外层可能存在的括号
+    function removeOuterBrackets(formula) {
+      let cleanFormula = formula;
+      while (cleanFormula.startsWith('(') && cleanFormula.endsWith(')')) {
+        let balance = 0;
+        let valid = true;
+        for (let i = 0; i < cleanFormula.length; i++) {
+          if (cleanFormula[i] === '(') balance++;
+          if (cleanFormula[i] === ')') balance--;
+          if (balance === 0 && i < cleanFormula.length - 1) {
+            valid = false;
+            break;
+          }
+        }
+        if (valid) {
+          cleanFormula = cleanFormula.substring(1, cleanFormula.length - 1);
+        } else {
+          break;
+        }
+      }
+      return cleanFormula;
+    }
+
+    // 递归提取所有子公式（按运算优先级和层次）
+    function extractSubFormulasRecursive(formula, variables, subFormulas) {
+      // 移除可能的外层括号
+      let cleanFormula = removeOuterBrackets(formula);
+      
+      // 查找主运算符
+      const mainOperator = findMainOperator(cleanFormula);
+      
+      if (mainOperator) {
+        if (mainOperator.type === 'binary') {
+          // 提取左操作数
+          const leftPart = cleanFormula.substring(0, mainOperator.position).trim();
+          if (!variables.includes(leftPart) && leftPart !== '') {
+            extractSubFormulasRecursive(leftPart, variables, subFormulas);
+          }
+          
+          // 提取右操作数
+          const rightPart = cleanFormula.substring(mainOperator.position + 1).trim();
+          if (!variables.includes(rightPart) && rightPart !== '') {
+            extractSubFormulasRecursive(rightPart, variables, subFormulas);
+          }
+          
+          // 将当前公式加入子公式列表
+          subFormulas.push({
+            formula: cleanFormula,
+            precedence: getOperatorPrecedence(mainOperator.symbol)
+          });
+        } else if (mainOperator.type === 'unary') {
+          // 提取操作数
+          const operand = cleanFormula.substring(mainOperator.position + 1).trim();
+          if (!variables.includes(operand) && operand !== '') {
+            extractSubFormulasRecursive(operand, variables, subFormulas);
+          }
+          
+          // 将当前公式加入子公式列表
+          subFormulas.push({
+            formula: cleanFormula,
+            precedence: getOperatorPrecedence(mainOperator.symbol)
+          });
+        }
+      }
+      
+      // 按优先级降序排序（高优先级先计算）
+      subFormulas.sort((a, b) => b.precedence - a.precedence);
+      return subFormulas;
+    }
+
+    // 递归分析公式结构，生成多层次拆分步骤
+    function recursiveAnalyzeFormula(formula, variables, level, steps) {
+      steps.push({ level, content: `第 ${level + 1} 层: ${formula}` });
+      
+      // 移除可能的外层括号
+      let cleanFormula = removeOuterBrackets(formula);
+      
+      // 查找主运算符
+      const mainOperator = findMainOperator(cleanFormula);
+      
+      if (mainOperator) {
+        steps.push({ 
+          level: level + 1, 
+          content: `主逻辑运算符: ${mainOperator.symbol} (优先级: ${getOperatorPrecedence(mainOperator.symbol)})` 
+        });
+        
+        if (mainOperator.type === 'unary') { // 一元运算符 (¬)
+          const operand = cleanFormula.substring(mainOperator.position + 1).trim();
+          steps.push({ level: level + 1, content: `操作数: ${operand}` });
+          recursiveAnalyzeFormula(operand, variables, level + 2, steps);
+        } else if (mainOperator.type === 'binary') { // 二元运算符
+          const leftPart = cleanFormula.substring(0, mainOperator.position).trim();
+          const rightPart = cleanFormula.substring(mainOperator.position + 1).trim();
+          steps.push({ level: level + 1, content: `左操作数: ${leftPart}` });
+          steps.push({ level: level + 1, content: `右操作数: ${rightPart}` });
+          recursiveAnalyzeFormula(leftPart, variables, level + 2, steps);
+          recursiveAnalyzeFormula(rightPart, variables, level + 2, steps);
+        }
+      } else {
+        // 检查是否为变量
+        if (variables.includes(cleanFormula)) {
+          steps.push({ level: level + 1, content: `命题变元: ${cleanFormula}` });
+        } else {
+          steps.push({ level: level + 1, content: `简单表达式: ${cleanFormula}` });
+        }
+      }
+      
+      // 识别所有变量
+      const formulaVariables = variables.filter(v => formula.includes(v));
+      steps.push({ level: level + 1, content: `包含的命题变元: ${formulaVariables.join(', ')}` });
+    }
+
+    // 获取运算符优先级（数字越大优先级越高）
+    function getOperatorPrecedence(operator) {
+      const precedence = {
+        '¬': 4,
+        '∧': 3,
+        '∨': 2,
+        '→': 1,
+        '↔': 0
+      };
+      return precedence[operator] || 0;
+    }
+
+    // 渲染公式拆分步骤
+    function renderBreakdownSteps(steps) {
+      breakdownStepsEl.innerHTML = '';
+      steps.forEach(step => {
+        const stepEl = document.createElement('div');
+        stepEl.className = `pl-${step.level * 4} py-1`;
+        stepEl.innerHTML = step.content;
+        breakdownStepsEl.appendChild(stepEl);
+      });
+    }
+
+    // 生成变量的所有真值组合
+    function generateTruthCombinations(variables) {
+      if (variables.length === 0) return [[]];
+      const [first, ...rest] = variables;
+      const restCombinations = generateTruthCombinations(rest);
+      return [
+        ...restCombinations.map((combo) => [true, ...combo]),
+        ...restCombinations.map((combo) => [false, ...combo]),
+      ];
+    }
+
+    // 查找公式中的主逻辑运算符
+    function findMainOperator(formula) {
+      // 处理括号
+      if (formula.startsWith('(') && formula.endsWith(')')) {
+        let balance = 0;
+        for (let i = 0; i < formula.length; i++) {
+          if (formula[i] === '(') balance++;
+          if (formula[i] === ')') balance--;
+          if (balance === 0 && i < formula.length - 1) {
+            // 括号不是最外层的
+            break;
+          } else if (balance === 0 && i === formula.length - 1) {
+            // 去除外层括号后递归查找
+            return findMainOperator(formula.substring(1, formula.length - 1));
+          }
+        }
+      }
+      
+      // 查找二元运算符（优先级从低到高）
+      const binaryOperators = [
+        { symbol: '↔', precedence: 0 },
+        { symbol: '→', precedence: 1 },
+        { symbol: '∨', precedence: 2 },
+        { symbol: '∧', precedence: 3 }
+      ];
+      
+      let balance = 0;
+      for (let i = formula.length - 1; i >= 0; i--) {
+        if (formula[i] === ')') balance++;
+        if (formula[i] === '(') balance--;
+        
+        // 只考虑括号外的运算符
+        if (balance === 0) {
+          for (const op of binaryOperators) {
+            if (formula[i] === op.symbol) {
+              return {
+                symbol: op.symbol,
+                position: i,
+                type: 'binary',
+                precedence: op.precedence
+              };
+            }
+          }
+          
+          // 查找否定运算符
+          if (formula[i] === '¬') {
+            // 确保¬是作为运算符而不是其他用途
+            if (i === 0 || '∧∨→↔('.includes(formula[i-1])) {
+              return {
+                symbol: '¬',
+                position: i,
+                type: 'unary',
+                precedence: 4
+              };
+            }
+          }
+        }
+      }
+      
+      return null;
+    }
+
+    // 计算公式的逻辑值
+    function evaluateSubFormula(formula, values) {
+      // 替换变量为真值（true/false）
+      let evaluated = formula;
+      for (const [varName, value] of Object.entries(values)) {
+        evaluated = evaluated.replace(
+          new RegExp(`\\b${varName}\\b`, 'g'),
+          value.toString()
+        );
+      }
+      
+      // 替换逻辑联结词为 JavaScript 可执行的运算
+      evaluated = evaluated
+        .replace(/∧/g, '&&')
+        .replace(/∨/g, '||')
+        .replace(/¬/g, '!');
+      
+      // 处理蕴含运算: a → b 等价于 !a || b
+      if (evaluated.includes('→')) {
+        const parts = evaluated.split('→');
+        if (parts.length > 1) {
+          evaluated = parts.map((part, index) => {
+            if (index === 0) {
+              return `(!(${part.trim()}))`;
+            } else {
+              return part.trim();
+            }
+          }).join('||');
+        }
+      }
+      
+      // 处理等价运算: a ↔ b 等价于 (a ∧ b) ∨ (!a ∧ !b)
+      if (evaluated.includes('↔')) {
+        const iffParts = evaluated.split('↔');
+        if (iffParts.length > 1) {
+          const left = `(${iffParts[0].trim()})`;
+          const right = `(${iffParts[1].trim()})`;
+          evaluated = `((${left}&&${right})||(!${left}&&!${right}))`;
+        }
+      }
+      
+      // 执行运算
+      try {
+        return new Function(...Object.keys(values), `return ${evaluated}`)(
+          ...Object.values(values)
+        );
+      } catch (error) {
+        alert(`公式计算错误: ${error.message}\n请检查公式格式是否正确`);
+        return null;
+      }
+    }
+
+    // 渲染真值表（子公式从左到右，最终结果列在最后且唯一）
+    function renderTruthTable(variables, subFormulas, formula, tableData) {
+      const thead = truthTable.querySelector('thead');
+      const tbody = truthTable.querySelector('tbody');
+
+      // 清空旧内容
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+
+      // 生成表头（变量 + 子公式 + 最终结果）
+      const headerRow = document.createElement('tr');
+      
+      // 变量列
+      variables.forEach((varName) => {
+        const th = document.createElement('th');
+        th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+        th.textContent = varName;
+        headerRow.appendChild(th);
+      });
+      
+      // 子公式列（按层次和顺序从左到右）
+      subFormulas.forEach(sub => {
+        const th = document.createElement('th');
+        th.className = 'px-6 py-3 text-left text-xs font-medium bg-blue-50 text-blue-700 uppercase tracking-wider';
+        th.textContent = sub.formula;
+        headerRow.appendChild(th);
+      });
+      
+      // 最终结果列（放在最后，确保唯一）
+      const resultTh = document.createElement('th');
+      resultTh.className = 'px-6 py-3 text-left text-xs font-medium bg-primary/10 text-primary uppercase tracking-wider';
+      resultTh.textContent = formula;
+      headerRow.appendChild(resultTh);
+      
+      thead.appendChild(headerRow);
+
+      // 生成表体（每一行数据）
+      tableData.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+        tr.classList.add('hover:bg-gray-100', 'transition-colors');
+        
+        // 变量列
+        variables.forEach((varName) => {
+          const td = document.createElement('td');
+          td.className = 'px-6 py-4 whitespace-nowrap text-sm';
+          td.textContent = row[varName] ? 'T' : 'F';
+          tr.appendChild(td);
+        });
+        
+        // 子公式列（按顺序从左到右）
+        subFormulas.forEach(sub => {
+          const td = document.createElement('td');
+          td.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600';
+          td.textContent = row[sub.formula] ? 'T' : 'F';
+          tr.appendChild(td);
+        });
+        
+        // 最终结果列（放在最后，确保唯一）
+        const resultTd = document.createElement('td');
+        resultTd.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
+        resultTd.textContent = row.finalResult ? 'T' : 'F';
+        resultTd.classList.add(row.finalResult ? 'text-green-600' : 'text-red-600');
+        tr.appendChild(resultTd);
+        
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 判断公式类型（永真式、永假式、可满足式）
+    function determineFormulaType(results) {
+      const allTrue = results.every((r) => r);
+      const allFalse = results.every((r) => !r);
+
+      let type, message, className;
+      if (allTrue) {
+        type = '永真式 (重言式)';
+        message = '该命题在所有情况下都为真，是一个永真式（重言式）。';
+        className = 'bg-green-50 border-l-4 border-green-500 text-green-700';
+      } else if (allFalse) {
+        type = '永假式 (矛盾式)';
+        message = '该命题在所有情况下都为假，是一个永假式（矛盾式）。';
+        className = 'bg-red-50 border-l-4 border-red-500 text-red-700';
+      } else {
+        type = '可满足式 (偶然式)';
+        message = '该命题在某些情况下为真，在某些情况下为假，是一个可满足式（偶然式）。';
+        className = 'bg-blue-50 border-l-4 border-blue-500 text-blue-700';
+      }
+
+      formulaTypeEl.className = ` ${className} p-4`;
+      formulaTypeEl.innerHTML = `
+        <h3 class="text-lg font-semibold">命题类型: ${type}</h3>
+        <p class="mt-2">${message}</p>
+      `;
+    }
+  </script>
+</body>
+</html>
